@@ -22,7 +22,14 @@ jobs:
       - run: npm run build
       - name: The tag is the manifest's version
         run: test "$(node -p "require('./manifest.json').version")" = "${GITHUB_REF_NAME}"
-      - name: Draft the release
+      # A release published by hand creates its tag, and this runs for it: the files are replaced
+      # with the ones just built rather than a second release attempted.
+      - name: Draft the release, or refresh its files
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --draft --title "$GITHUB_REF_NAME"
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" main.js manifest.json styles.css --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --draft --title "$GITHUB_REF_NAME"
+          fi
