@@ -1,0 +1,21 @@
+{
+  "name": "transformpipe-obsidian",
+  "version": "1.0.0",
+  "description": "Publish a note from Obsidian as a TransformPipe page: a link, the same link after every edit, sharing with named people, and Word or PDF.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "test": "node --test --experimental-strip-types src/*.test.ts"
+  },
+  "keywords": ["obsidian", "markdown", "publish", "share"],
+  "author": "Raudar Labs",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.9.0"
+  }
+}

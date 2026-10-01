@@ -1,0 +1,17 @@
+/* TransformPipe: the few things Obsidian's own styles do not already cover. */
+
+.transformpipe-modal-actions {
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: flex-end;
+  margin-top: var(--size-4-4);
+}
+
+.transformpipe-warning {
+  color: var(--text-warning);
+}
+
+.transformpipe-muted {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}

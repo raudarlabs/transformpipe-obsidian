@@ -1,0 +1,10 @@
+{
+  "id": "transformpipe",
+  "name": "TransformPipe",
+  "version": "1.0.0",
+  "minAppVersion": "1.11.4",
+  "description": "Publish a note as a page with a link that stays the same after every edit. Share it with named people, add a password or an end date, and export Word or PDF.",
+  "author": "Raudar Labs",
+  "authorUrl": "https://transformpipe.com",
+  "isDesktopOnly": false
+}
