@@ -1,12 +1,56 @@
 # TransformPipe for Obsidian
 
-Publish a note as a page with a link — and keep the same link after every edit.
+**Turn any note into a web page in one command, and keep the same link after every edit.**
 
-Run **Publish note** and the note becomes a clean, readable page on
-[TransformPipe](https://transformpipe.com), with the link copied for you. Edit the note and run it
-again: the page updates, and the link you already sent keeps working. Share a note with named
-people instead of a public link, make it private again, or export it as Word or PDF into your
-vault.
+![Turn any note into a web page](https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/1-note-to-page.png)
+
+You wrote something worth sending. Now what? Screenshots crop the table. Pasted Markdown arrives as
+a wall of asterisks. A PDF is out of date the moment you fix a typo.
+
+Run **Publish note** instead. The note becomes a clean, readable page on
+[TransformPipe](https://transformpipe.com), and its link is already on your clipboard. Paste it into
+a chat, an email or a ticket.
+
+## Edit the note. The link stays.
+
+Found a mistake after you sent it? Fix it in Obsidian and publish again. The page updates in place,
+and the link people already have shows the new version. No new link to resend, no "use this one
+instead". The last ten versions are kept on TransformPipe.
+
+![Edit the note, the link stays](https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/2-same-link.png)
+
+## It looks the way Obsidian shows it
+
+Tables, callouts, code blocks, task lists, footnotes, highlights and **Mermaid diagrams** come out
+right, on a laptop and on a phone. Pictures from your vault travel inside the page, so nothing
+breaks when you move files around later.
+
+## Share with exactly who you choose
+
+Not everything should be public. **Share with people…** limits a note to the email addresses you
+name: only they can open it, and each gets the link by email. **Make private** stops sharing in one
+step, and the old link stops working for good.
+
+![Share with exactly who you choose](https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/4-share-with-people.png)
+
+## Need a file? Word and PDF
+
+**Export as Word** and **Export as PDF** save `Launch plan.docx` or `Launch plan.pdf` right next to
+the note, built from its latest text.
+
+![Export Word and PDF into your vault](https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/5-word-and-pdf.png)
+
+## On your phone too
+
+The same commands on iPhone, iPad and Android. Sign in once from the browser: no API key to copy,
+and the sign-in lives in your system keychain, not in your vault.
+
+<p>
+<img src="https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/m1-publish-from-phone.png" width="24%" alt="Publish from your phone">
+<img src="https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/m2-link-copied.png" width="24%" alt="The link is already copied">
+<img src="https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/m3-reads-anywhere.png" width="24%" alt="A page that reads well on any screen">
+<img src="https://raw.githubusercontent.com/raudarlabs/transformpipe-obsidian/main/assets/m5-sign-in-once.png" width="24%" alt="Sign in once, no API keys">
+</p>
 
 ## Commands
 
@@ -67,10 +111,8 @@ build Word and PDF from it.
 
 ## Installing
 
-From Obsidian: **Settings → Community plugins → Browse**, search for *TransformPipe*.
-
-Before it is listed, you can install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat):
-add `raudarlabs/transformpipe-obsidian` as a beta plugin.
+From Obsidian: **Settings → Community plugins → Browse**, search for *TransformPipe*, then
+**Install** and **Enable**. Open the plugin's settings and press **Sign in**.
 
 ## Development
 
