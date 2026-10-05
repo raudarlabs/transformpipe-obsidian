@@ -18,7 +18,7 @@ All of them are in the command palette; none has a hotkey until you give it one.
 | Copy link | Copies the page's link. |
 | Share with people… | Shares the note with the email addresses you give instead. Only they can open it, once signed in; each is emailed the link. |
 | Make private | Stops sharing. The old link stops working for good; publishing again makes a new one. |
-| Open in TransformPipe | Opens the document in TransformPipe in your browser. |
+| Open in browser | Opens the document in TransformPipe in your browser. |
 | Export as Word / Export as PDF | Saves `<note>.docx` or `<note>.pdf` next to the note. |
 
 The plugin remembers where a note was published in three front-matter fields —

@@ -1,4 +1,4 @@
-import { type App, requestUrl } from 'obsidian';
+import { type App, requestUrl, type RequestUrlResponse } from 'obsidian';
 import { challengeFor, randomToken } from './pkce.ts';
 
 /*
@@ -19,6 +19,21 @@ export const PROTOCOL_ACTION = 'transformpipe-auth';
 
 const SECRET_ACCESS = 'transformpipe-access-token';
 const SECRET_REFRESH = 'transformpipe-refresh-token';
+
+/** What the token endpoint answers, or null when the body is not JSON at all. */
+interface Tokens {
+  access_token?: string;
+  refresh_token?: string;
+  error_description?: string;
+}
+
+function tokensOf(answer: RequestUrlResponse): Tokens | null {
+  try {
+    return answer.json as Tokens | null;
+  } catch {
+    return null;
+  }
+}
 
 interface Pending {
   state: string;
@@ -115,13 +130,15 @@ export class Auth {
       throw: false,
     });
 
-    if (answer.status !== 200 || !answer.json?.access_token) {
+    const tokens = tokensOf(answer);
+
+    if (answer.status !== 200 || !tokens?.access_token) {
       pending.resolve(false);
 
-      return { ok: false, message: answer.json?.error_description ?? `Sign-in failed (${answer.status})` };
+      return { ok: false, message: tokens?.error_description ?? `Sign-in failed (${answer.status})` };
     }
 
-    this.store(answer.json.access_token, answer.json.refresh_token ?? null);
+    this.store(tokens.access_token, tokens.refresh_token ?? null);
     pending.resolve(true);
 
     return { ok: true, message: 'Signed in to TransformPipe.' };
@@ -147,13 +164,15 @@ export class Auth {
       throw: false,
     });
 
-    if (answer.status !== 200 || !answer.json?.access_token) {
+    const tokens = tokensOf(answer);
+
+    if (answer.status !== 200 || !tokens?.access_token) {
       this.store('', null);
 
       return false;
     }
 
-    this.store(answer.json.access_token, answer.json.refresh_token ?? null);
+    this.store(tokens.access_token, tokens.refresh_token ?? null);
 
     return true;
   }

@@ -146,15 +146,17 @@ export async function prepareNote(markdown: string, vault: VaultReader): Promise
 async function replaceAsync(
   text: string,
   pattern: RegExp,
-  replacer: (...groups: any[]) => Promise<string>
+  replacer: (whole: string, ...groups: string[]) => Promise<string>
 ): Promise<string> {
   const parts: string[] = [];
   let last = 0;
 
   for (const match of text.matchAll(pattern)) {
     parts.push(text.slice(last, match.index));
-    parts.push(await replacer(...match));
-    last = match.index! + match[0].length;
+    const [whole, ...groups] = match;
+
+    parts.push(await replacer(whole, ...groups));
+    last = match.index + match[0].length;
   }
 
   parts.push(text.slice(last));

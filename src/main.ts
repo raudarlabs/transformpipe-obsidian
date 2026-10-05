@@ -7,6 +7,7 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  type SettingDefinitionItem,
   TFile,
 } from 'obsidian';
 import { Api, ApiError, type RemoteDocument } from './api.ts';
@@ -26,7 +27,7 @@ export default class TransformPipePlugin extends Plugin {
   api!: Api;
 
   async onload() {
-    this.settings = { ...DEFAULTS, ...(await this.loadData()) };
+    this.settings = { ...DEFAULTS, ...((await this.loadData()) as Partial<Settings> | null) };
 
     const host = () => this.settings.host.replace(/\/+$/, '');
 
@@ -34,7 +35,7 @@ export default class TransformPipePlugin extends Plugin {
     this.api = new Api(this.auth, host);
 
     this.registerObsidianProtocolHandler(PROTOCOL_ACTION, async (params) => {
-      const result = await this.auth.handleRedirect(params as Record<string, string>);
+      const result = await this.auth.handleRedirect(params);
 
       new Notice(result.message);
     });
@@ -79,7 +80,7 @@ export default class TransformPipePlugin extends Plugin {
         ).open()
       ),
     });
-    this.addCommand({ id: 'open', name: 'Open in TransformPipe', checkCallback: onNote((file) => this.openRemote(file)) });
+    this.addCommand({ id: 'open', name: 'Open in browser', checkCallback: onNote((file) => this.openRemote(file)) });
     this.addCommand({ id: 'export-word', name: 'Export as Word', checkCallback: onNote((file) => this.export(file, 'docx')) });
     this.addCommand({ id: 'export-pdf', name: 'Export as PDF', checkCallback: onNote((file) => this.export(file, 'pdf')) });
 
@@ -92,11 +93,13 @@ export default class TransformPipePlugin extends Plugin {
 
   /** The id and link this note was published under, from its front matter. */
   private remoteOf(file: TFile): { id: string | null; url: string | null } {
-    const front = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const front: Record<string, unknown> = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const id = front[KEYS.id];
+    const url = front[KEYS.url];
 
     return {
-      id: typeof front[KEYS.id] === 'string' ? front[KEYS.id] : null,
-      url: typeof front[KEYS.url] === 'string' ? front[KEYS.url] : null,
+      id: typeof id === 'string' ? id : null,
+      url: typeof url === 'string' ? url : null,
     };
   }
 
@@ -131,7 +134,7 @@ export default class TransformPipePlugin extends Plugin {
   }
 
   private async remember(file: TFile, document: RemoteDocument) {
-    await this.app.fileManager.processFrontMatter(file, (front) => {
+    await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
       front[KEYS.id] = document.id;
 
       if (document.share.url) {
@@ -217,7 +220,7 @@ export default class TransformPipePlugin extends Plugin {
 
     const state = await this.api.share(id, { mode: 'people', emails });
 
-    await this.remember(file, { ...(await this.api.get(id)), share: { ...state } } as RemoteDocument);
+    await this.remember(file, { ...(await this.api.get(id)), share: { ...state } });
     new Notice(
       state.notified && state.notified.length > 0
         ? `Shared. ${state.notified.join(', ')} ${state.notified.length === 1 ? 'was' : 'were'} emailed the link.`
@@ -233,7 +236,7 @@ export default class TransformPipePlugin extends Plugin {
     }
 
     await this.api.share(id, { mode: 'private' });
-    await this.app.fileManager.processFrontMatter(file, (front) => {
+    await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
       delete front[KEYS.url];
       front[KEYS.share] = 'private';
     });
@@ -370,6 +373,15 @@ class PeopleModal extends Modal {
   }
 }
 
+const WHAT_IS_SENT =
+  'Publishing sends the note’s text and the pictures it embeds from the vault to TransformPipe, which keeps them in your account. Nothing is sent until you run a command.';
+const SERVER_NOTE = 'Only change this if you run your own TransformPipe.';
+
+/*
+ * Two ways of drawing the same three rows. Obsidian 1.13 reads `getSettingDefinitions()`, which is
+ * what puts these settings in its settings search; anything older never calls it and draws the tab
+ * through `display()` instead. The account row is the same code either way.
+ */
 class SettingsTab extends PluginSettingTab {
   constructor(
     app: App,
@@ -378,12 +390,52 @@ class SettingsTab extends PluginSettingTab {
     super(app, plugin);
   }
 
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      { name: 'Account', aliases: ['sign in', 'sign out'], render: (setting) => this.account(setting) },
+      { name: 'What is sent', desc: WHAT_IS_SENT },
+      {
+        name: 'Server',
+        desc: SERVER_NOTE,
+        control: { type: 'text', key: 'host', defaultValue: DEFAULTS.host, placeholder: DEFAULTS.host },
+      },
+    ];
+  }
+
+  async setControlValue(key: string, value: unknown) {
+    if (key === 'host') {
+      this.plugin.settings.host = (typeof value === 'string' && value.trim()) || DEFAULTS.host;
+      await this.plugin.saveSettings();
+    }
+  }
+
+  /** Obsidian before 1.13. */
   display() {
+    this.drawByHand();
+  }
+
+  private drawByHand() {
     const { containerEl } = this;
 
     containerEl.empty();
+    this.account(new Setting(containerEl));
+    new Setting(containerEl).setName('What is sent').setDesc(WHAT_IS_SENT);
+    new Setting(containerEl)
+      .setName('Server')
+      .setDesc(SERVER_NOTE)
+      .addText((text) =>
+        text.setValue(this.plugin.settings.host).onChange(async (value) => {
+          await this.setControlValue('host', value);
+        })
+      );
+  }
 
-    const account = new Setting(containerEl).setName('Account');
+  /*
+   * The account row draws itself again after a sign-in or sign-out — on the row it already is, so
+   * the same code works under either way of drawing the tab.
+   */
+  private account(account: Setting) {
+    account.clear().setName('Account');
 
     if (!this.plugin.auth.supported) {
       account.setDesc('Signing in needs Obsidian 1.11.4 or later, which keeps the sign-in in the system keychain.');
@@ -407,7 +459,7 @@ class SettingsTab extends PluginSettingTab {
       account.addButton((button) =>
         button.setButtonText('Sign out').onClick(async () => {
           await this.plugin.auth.signOut();
-          this.display();
+          this.account(account);
         })
       );
     } else {
@@ -424,26 +476,10 @@ class SettingsTab extends PluginSettingTab {
             });
 
             if (ok) {
-              this.display();
+              this.account(account);
             }
           })
       );
     }
-
-    new Setting(containerEl)
-      .setName('What is sent')
-      .setDesc(
-        'Publishing sends the note’s text and the pictures it embeds from the vault to TransformPipe, which keeps them in your account. Nothing is sent until you run a command.'
-      );
-
-    new Setting(containerEl)
-      .setName('Server')
-      .setDesc('Only change this if you run your own TransformPipe.')
-      .addText((text) =>
-        text.setValue(this.plugin.settings.host).onChange(async (value) => {
-          this.plugin.settings.host = value.trim() || DEFAULTS.host;
-          await this.plugin.saveSettings();
-        })
-      );
   }
 }

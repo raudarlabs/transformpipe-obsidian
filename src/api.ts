@@ -25,6 +25,13 @@ export interface RemoteDocument {
   share: Share;
 }
 
+export interface Usage {
+  email: string | null;
+  bytes: number;
+  documents: number;
+  limits: { bytes: number; documents: number };
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -74,7 +81,9 @@ export class Api {
       let said = '';
 
       try {
-        said = response.json?.error ?? '';
+        const body = response.json as { error?: unknown } | null;
+
+        said = typeof body?.error === 'string' ? body.error : '';
       } catch {
         said = '';
       }
@@ -98,7 +107,7 @@ export class Api {
       body: markdown,
     });
 
-    return response.json.document;
+    return (response.json as { document: RemoteDocument }).document;
   }
 
   /** New text, same document and link. */
@@ -109,11 +118,11 @@ export class Api {
       body: JSON.stringify({ markdown, name }),
     });
 
-    return response.json;
+    return response.json as { document: RemoteDocument; changed: boolean };
   }
 
   async get(id: string): Promise<RemoteDocument> {
-    return (await this.call(`/documents/${encodeURIComponent(id)}`)).json.document;
+    return ((await this.call(`/documents/${encodeURIComponent(id)}`)).json as { document: RemoteDocument }).document;
   }
 
   async share(id: string, body: { mode: 'private' | 'link' | 'people'; emails?: string[] }): Promise<Share & { notified?: string[] }> {
@@ -123,14 +132,14 @@ export class Api {
       body: JSON.stringify(body),
     });
 
-    return response.json;
+    return response.json as Share & { notified?: string[] };
   }
 
   async download(id: string, format: 'docx' | 'pdf'): Promise<ArrayBuffer> {
     return (await this.call(`/documents/${encodeURIComponent(id)}.${format}`)).arrayBuffer;
   }
 
-  async usage(): Promise<{ email: string | null; bytes: number; documents: number; limits: { bytes: number; documents: number } }> {
-    return (await this.call('/usage')).json;
+  async usage(): Promise<Usage> {
+    return (await this.call('/usage')).json as Usage;
   }
 }

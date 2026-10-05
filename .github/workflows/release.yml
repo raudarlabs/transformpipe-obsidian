@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: write
+  # For the build-provenance attestation: anyone can check that the release's files came from this
+  # workflow, at this tag, with `gh attestation verify`.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -20,6 +24,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
       - name: The tag is the manifest's version
         run: test "$(node -p "require('./manifest.json').version")" = "${GITHUB_REF_NAME}"
       # A release published by hand creates its tag, and this runs for it: the files are replaced
