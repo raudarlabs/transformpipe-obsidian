@@ -51,7 +51,9 @@ export default class TransformPipePlugin extends Plugin {
       }
 
       if (!checking) {
-        run(file).catch((cause) => new Notice(messageOf(cause), 8000));
+        run(file).catch((cause) => {
+          new Notice(messageOf(cause), 8000);
+        });
       }
 
       return true;
@@ -306,7 +308,9 @@ class ConfirmModal extends Modal {
     keep.addEventListener('click', () => this.close());
     go.addEventListener('click', () => {
       this.close();
-      this.onConfirm().catch((cause) => new Notice(messageOf(cause), 8000));
+      this.onConfirm().catch((cause) => {
+        new Notice(messageOf(cause), 8000);
+      });
     });
     keep.focus();
   }
@@ -355,7 +359,9 @@ class PeopleModal extends Modal {
       }
 
       this.close();
-      this.onShare(emails).catch((cause) => new Notice(messageOf(cause), 8000));
+      this.onShare(emails).catch((cause) => {
+        new Notice(messageOf(cause), 8000);
+      });
     });
   }
 
@@ -383,14 +389,21 @@ class SettingsTab extends PluginSettingTab {
       account.setDesc('Signing in needs Obsidian 1.11.4 or later, which keeps the sign-in in the system keychain.');
     } else if (this.plugin.auth.signedIn) {
       account.setDesc('Signed in.');
+      /*
+       * Braces, not an arrow's value: Obsidian's Setting has a `then` method, so a promise handed
+       * one back takes it for another promise and calls that `then`, which hands the Setting back,
+       * for ever. Returning `account.setDesc(...)` here froze Obsidian the moment this tab opened.
+       */
       this.plugin.api
         .usage()
-        .then((usage) =>
+        .then((usage) => {
           account.setDesc(
             `Signed in as ${usage.email ?? 'your account'} · ${usage.documents} of ${usage.limits.documents} documents · ${(usage.bytes / 1048576).toFixed(1)} of ${(usage.limits.bytes / 1048576).toFixed(0)} MB`
-          )
-        )
-        .catch((cause) => account.setDesc(messageOf(cause)));
+          );
+        })
+        .catch((cause) => {
+          account.setDesc(messageOf(cause));
+        });
       account.addButton((button) =>
         button.setButtonText('Sign out').onClick(async () => {
           await this.plugin.auth.signOut();
