@@ -62,8 +62,15 @@ interface Pending {
   resolve: (ok: boolean) => void;
 }
 
+/** A verifier and its challenge, worked out before anybody presses Sign in. */
+interface Ready {
+  verifier: string;
+  challenge: string;
+}
+
 export class Auth {
   private pending: Pending | null = null;
+  private ready: Ready | null = null;
 
   constructor(
     private readonly app: App,
@@ -89,20 +96,56 @@ export class Auth {
     this.app.secretStorage.setSecret(SECRET_REFRESH, refresh ?? '');
   }
 
-  /** Opens the sign-in in the browser; resolves when the code has come back and been exchanged. */
-  async signIn(): Promise<boolean> {
-    if (!this.supported) {
-      throw new Error('Signing in needs Obsidian 1.11.4 or later, which keeps the sign-in in the system keychain.');
+  /*
+   * The PKCE challenge, made ahead of time.
+   *
+   * Hashing is asynchronous, and on an iPhone that is the whole problem: the system lets a page
+   * open the browser only while it is still handling the tap, and an `await` before `window.open`
+   * ends that. Obsidian on iOS then opened nothing — the Sign in button just sat there — while every
+   * desktop, which has no such rule, worked. So the challenge is computed when the plugin loads and
+   * again after each use, and the tap itself does nothing that waits.
+   */
+  async prepare(): Promise<void> {
+    if (this.ready) {
+      return;
     }
 
-    const host = this.host();
     const verifier = randomToken();
+
+    this.ready = { verifier, challenge: await challengeFor(verifier) };
+  }
+
+  /**
+   * Opens the sign-in in the browser; resolves when the code has come back and been exchanged.
+   *
+   * Not `async`, on purpose: everything up to `window.open` has to run in the same turn as the tap
+   * that called it — see `prepare`.
+   */
+  signIn(): Promise<boolean> {
+    if (!this.supported) {
+      return Promise.reject(
+        new Error('Signing in needs Obsidian 1.11.4 or later, which keeps the sign-in in the system keychain.')
+      );
+    }
+
+    const ready = this.ready;
+
+    if (!ready) {
+      // Not made yet — only possible in the first instant after loading. A desktop opens the
+      // browser after a wait without complaint; on a phone the next tap finds it ready.
+      return this.prepare().then(() => this.signIn());
+    }
+
+    this.ready = null;
+
+    const host = this.host();
+    const verifier = ready.verifier;
     const state = randomToken();
     const query = new URLSearchParams({
       client_id: CLIENT_ID,
       redirect_uri: REDIRECT_URI,
       response_type: 'code',
-      code_challenge: await challengeFor(verifier),
+      code_challenge: ready.challenge,
       code_challenge_method: 'S256',
       scope: 'documents:read documents:write',
       resource: `${host}/api/mcp`,
@@ -117,6 +160,9 @@ export class Auth {
     this.app.saveLocalStorage(PENDING_KEY, { state, verifier, host, at: Date.now() } satisfies Kept);
 
     window.open(`${host}/api/oauth/authorize?${query}`);
+
+    // The next sign-in's challenge, so a second attempt is as instant as the first.
+    void this.prepare();
 
     return done;
   }

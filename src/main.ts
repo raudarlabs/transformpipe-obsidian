@@ -53,6 +53,9 @@ export default class TransformPipePlugin extends Plugin {
     this.auth = new Auth(this.app, host);
     this.api = new Api(this.auth, host);
 
+    // Ready before anybody can press Sign in: on iOS the tap has to open the browser at once.
+    void this.auth.prepare();
+
     this.registerObsidianProtocolHandler(PROTOCOL_ACTION, async (params) => {
       const result = await this.auth.handleRedirect(params);
 
