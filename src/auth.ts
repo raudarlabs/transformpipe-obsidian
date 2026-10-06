@@ -17,6 +17,26 @@ export const CLIENT_ID = 'transformpipe-obsidian';
 export const REDIRECT_URI = 'obsidian://transformpipe-auth';
 export const PROTOCOL_ACTION = 'transformpipe-auth';
 
+/*
+ * The sign-in in progress, kept outside memory as well.
+ *
+ * On a phone the browser takes the screen while the person approves, and the system is free to
+ * unload Obsidian behind it. The app that wakes up to `obsidian://transformpipe-auth` was then a
+ * fresh one with no idea a sign-in had started, and refused the code it was handed — which is how
+ * signing in from a phone failed. The state and the PKCE verifier are worth nothing after the code
+ * is exchanged, and nothing without the code, so they wait in Obsidian's own local storage for ten
+ * minutes rather than in the plugin's memory alone.
+ */
+const PENDING_KEY = 'transformpipe-sign-in';
+const PENDING_FOR_MS = 10 * 60 * 1000;
+
+interface Kept {
+  state: string;
+  verifier: string;
+  host: string;
+  at: number;
+}
+
 const SECRET_ACCESS = 'transformpipe-access-token';
 const SECRET_REFRESH = 'transformpipe-refresh-token';
 
@@ -94,6 +114,8 @@ export class Auth {
       this.pending = { state, verifier, host, resolve };
     });
 
+    this.app.saveLocalStorage(PENDING_KEY, { state, verifier, host, at: Date.now() } satisfies Kept);
+
     window.open(`${host}/api/oauth/authorize?${query}`);
 
     return done;
@@ -101,13 +123,14 @@ export class Auth {
 
   /** What `obsidian://transformpipe-auth?…` brought back. */
   async handleRedirect(params: Record<string, string>): Promise<{ ok: boolean; message: string }> {
-    const pending = this.pending;
+    const pending = this.pending?.state === params.state ? this.pending : this.restore(params.state);
 
-    if (!pending || params.state !== pending.state) {
+    if (!pending) {
       return { ok: false, message: 'That sign-in was not started here, so it was ignored.' };
     }
 
     this.pending = null;
+    this.app.saveLocalStorage(PENDING_KEY, null);
 
     if (params.error) {
       pending.resolve(false);
@@ -142,6 +165,17 @@ export class Auth {
     pending.resolve(true);
 
     return { ok: true, message: 'Signed in to TransformPipe.' };
+  }
+
+  /** The sign-in this Obsidian started before it was unloaded, if it is this one and still fresh. */
+  private restore(state: string | undefined): Pending | null {
+    const kept = this.app.loadLocalStorage(PENDING_KEY) as Kept | null;
+
+    if (!kept || !state || kept.state !== state || Date.now() - kept.at > PENDING_FOR_MS) {
+      return null;
+    }
+
+    return { state: kept.state, verifier: kept.verifier, host: kept.host, resolve: () => undefined };
   }
 
   /** A new pair for the refresh token, once; false means sign in again. */

@@ -24,6 +24,7 @@ const DEFAULTS: Settings = { host: 'https://transformpipe.com' };
 export default class TransformPipePlugin extends Plugin {
   settings: Settings = DEFAULTS;
   auth!: Auth;
+  private settingsTab: SettingsTab | null = null;
   api!: Api;
 
   async onload() {
@@ -38,6 +39,12 @@ export default class TransformPipePlugin extends Plugin {
       const result = await this.auth.handleRedirect(params);
 
       new Notice(result.message);
+
+      // A sign-in finished by an Obsidian that was reloaded meanwhile has no settings tab waiting
+      // on it; the one on screen, if any, is redrawn so it shows the account.
+      if (result.ok) {
+        this.settingsTab?.display();
+      }
     });
 
     /*
@@ -84,7 +91,8 @@ export default class TransformPipePlugin extends Plugin {
     this.addCommand({ id: 'export-word', name: 'Export as Word', checkCallback: onNote((file) => this.export(file, 'docx')) });
     this.addCommand({ id: 'export-pdf', name: 'Export as PDF', checkCallback: onNote((file) => this.export(file, 'pdf')) });
 
-    this.addSettingTab(new SettingsTab(this.app, this));
+    this.settingsTab = new SettingsTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
   }
 
   async saveSettings() {
