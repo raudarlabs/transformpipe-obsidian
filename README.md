@@ -7,7 +7,7 @@
 You wrote something worth sending. Now what? Screenshots crop the table. Pasted Markdown arrives as
 a wall of asterisks. A PDF is out of date the moment you fix a typo.
 
-Run **Publish note** instead. The note becomes a clean, readable page on
+Click the TransformPipe icon in the ribbon, or run **Publish note**, instead. The note becomes a clean, readable page on
 [TransformPipe](https://transformpipe.com), and its link is already on your clipboard. Paste it into
 a chat, an email or a ticket.
 

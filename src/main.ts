@@ -17,9 +17,27 @@ import { DOCUMENT_BYTES, documentName, KEYS, prepareNote } from './note.ts';
 interface Settings {
   /** Where TransformPipe is. Only somebody running their own copy changes this. */
   host: string;
+  /** Whether the first-run window has been shown, so it is shown once and never again. */
+  welcomed: boolean;
 }
 
-const DEFAULTS: Settings = { host: 'https://transformpipe.com' };
+const DEFAULTS: Settings = { host: 'https://transformpipe.com', welcomed: false };
+
+/*
+ * What to do once a sign-in comes back: the note somebody tried to publish before they had an
+ * account. Kept in Obsidian's local storage rather than in memory for the reason auth.ts keeps the
+ * sign-in itself there — on a phone, the Obsidian that wakes up to the redirect may be a fresh one.
+ */
+const AFTER_SIGN_IN = 'transformpipe-after-sign-in';
+const AFTER_SIGN_IN_FOR_MS = 10 * 60 * 1000;
+
+type Intent = 'publish' | 'docx' | 'pdf';
+
+interface Waiting {
+  intent: Intent;
+  path: string;
+  at: number;
+}
 
 export default class TransformPipePlugin extends Plugin {
   settings: Settings = DEFAULTS;
@@ -38,13 +56,38 @@ export default class TransformPipePlugin extends Plugin {
     this.registerObsidianProtocolHandler(PROTOCOL_ACTION, async (params) => {
       const result = await this.auth.handleRedirect(params);
 
-      new Notice(result.message);
-
       // A sign-in finished by an Obsidian that was reloaded meanwhile has no settings tab waiting
       // on it; the one on screen, if any, is redrawn so it shows the account.
       if (result.ok) {
         this.settingsTab?.display();
       }
+
+      const waiting = this.takeWaiting();
+
+      if (!result.ok || !waiting) {
+        new Notice(
+          result.ok
+            ? 'Signed in to TransformPipe. Open a note and click the TransformPipe icon in the ribbon to publish it.'
+            : result.message,
+          result.ok ? 8000 : 5000
+        );
+
+        return;
+      }
+
+      /* The note they were publishing when they were asked to sign in: finish what they started. */
+      const file = this.app.vault.getFileByPath(waiting.path);
+
+      if (!file) {
+        new Notice('Signed in to TransformPipe.');
+
+        return;
+      }
+
+      new Notice(`Signed in. ${waiting.intent === 'publish' ? 'Publishing' : 'Exporting'} “${file.basename}”…`);
+      this.perform(waiting.intent, file).catch((cause) => {
+        new Notice(messageOf(cause), 8000);
+      });
     });
 
     /*
@@ -67,7 +110,7 @@ export default class TransformPipePlugin extends Plugin {
       return true;
     };
 
-    this.addCommand({ id: 'publish', name: 'Publish note', checkCallback: onNote((file) => this.publish(file)) });
+    this.addCommand({ id: 'publish', name: 'Publish note', checkCallback: onNote((file) => this.run('publish', file)) });
     this.addCommand({ id: 'copy-link', name: 'Copy link', checkCallback: onNote((file) => this.copyLink(file)) });
     this.addCommand({
       id: 'share-with-people',
@@ -88,11 +131,124 @@ export default class TransformPipePlugin extends Plugin {
       ),
     });
     this.addCommand({ id: 'open', name: 'Open in browser', checkCallback: onNote((file) => this.openRemote(file)) });
-    this.addCommand({ id: 'export-word', name: 'Export as Word', checkCallback: onNote((file) => this.export(file, 'docx')) });
-    this.addCommand({ id: 'export-pdf', name: 'Export as PDF', checkCallback: onNote((file) => this.export(file, 'pdf')) });
+    this.addCommand({ id: 'export-word', name: 'Export as Word', checkCallback: onNote((file) => this.run('docx', file)) });
+    this.addCommand({ id: 'export-pdf', name: 'Export as PDF', checkCallback: onNote((file) => this.run('pdf', file)) });
+
+    /*
+     * One click from anywhere, because a command palette is a place you have to know to look: the
+     * plugin used to arrive with nothing on screen at all, and "Publish note" was found by those who
+     * read the README.
+     */
+    this.addRibbonIcon('send', 'Publish to TransformPipe', () => {
+      const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+
+      if (!file) {
+        new Notice('Open a note, then click this again to publish it.');
+
+        return;
+      }
+
+      this.run('publish', file).catch((cause) => {
+        new Notice(messageOf(cause), 8000);
+      });
+    });
 
     this.settingsTab = new SettingsTab(this.app, this);
     this.addSettingTab(this.settingsTab);
+
+    this.app.workspace.onLayoutReady(() => {
+      this.welcome().catch(() => undefined);
+    });
+  }
+
+  /*
+   * Said once, the first time the plugin runs: what it is for, and the account it needs. Somebody
+   * who already signed in on an earlier version has nothing to be told.
+   */
+  private async welcome() {
+    if (this.settings.welcomed) {
+      return;
+    }
+
+    this.settings.welcomed = true;
+    await this.saveSettings();
+
+    if (this.auth.signedIn || !this.auth.supported) {
+      return;
+    }
+
+    new SignInModal(this.app, this, {
+      heading: 'Publish your first note',
+      body: [
+        'Turn any note into a clean web page, with a link that stays the same after every edit. Tables, callouts, Mermaid diagrams and pictures come out right.',
+        'Publishing needs a free TransformPipe account. Sign in once, in your browser, and you come straight back here.',
+        'Then open a note and click the TransformPipe icon in the ribbon, or run “Publish note” from the command palette.',
+      ],
+      action: 'Sign in',
+      later: 'Later',
+    }).open();
+  }
+
+  /*
+   * A command that needs the account. Without one, the person is asked to sign in — with the note
+   * remembered, so that coming back from the browser finishes the publish instead of leaving them
+   * to find the command again. It used to be an eight-second notice pointing at the settings.
+   */
+  async run(intent: Intent, file: TFile) {
+    if (!this.auth.signedIn) {
+      this.askToSignIn(intent, file);
+
+      return;
+    }
+
+    try {
+      await this.perform(intent, file);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) {
+        this.askToSignIn(intent, file, 'Your TransformPipe sign-in has ended. Sign in again and this note is published as soon as you are back.');
+
+        return;
+      }
+
+      throw cause;
+    }
+  }
+
+  private perform(intent: Intent, file: TFile): Promise<void> {
+    return intent === 'publish' ? this.publish(file) : this.export(file, intent);
+  }
+
+  private askToSignIn(intent: Intent, file: TFile, why?: string) {
+    if (!this.auth.supported) {
+      throw new Error('Signing in needs Obsidian 1.11.4 or later, which keeps the sign-in in the system keychain.');
+    }
+
+    const doing = intent === 'publish' ? 'published' : intent === 'docx' ? 'exported as Word' : 'exported as PDF';
+
+    new SignInModal(this.app, this, {
+      heading: intent === 'publish' ? 'Sign in to publish' : 'Sign in to export',
+      body: [
+        why ??
+          'Publishing needs a free TransformPipe account. Sign in in your browser — it takes a minute, and creating the account is part of it.',
+        `When you come back, “${file.basename}” is ${doing} straight away.`,
+      ],
+      action: intent === 'publish' ? 'Sign in and publish' : 'Sign in and export',
+      later: 'Cancel',
+      waiting: { intent, path: file.path, at: Date.now() },
+    }).open();
+  }
+
+  /** Remembers what to finish after the sign-in, or forgets it. */
+  keepWaiting(waiting: Waiting | null) {
+    this.app.saveLocalStorage(AFTER_SIGN_IN, waiting);
+  }
+
+  private takeWaiting(): Waiting | null {
+    const waiting = this.app.loadLocalStorage(AFTER_SIGN_IN) as Waiting | null;
+
+    this.keepWaiting(null);
+
+    return waiting && Date.now() - waiting.at < AFTER_SIGN_IN_FOR_MS ? waiting : null;
   }
 
   async saveSettings() {
@@ -296,6 +452,59 @@ export default class TransformPipePlugin extends Plugin {
 
 const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
+/*
+ * Asks for the account, and opens the sign-in from a button press — the one way into the browser
+ * every platform lets through. What happens after is the protocol handler's: it is the same code
+ * whether this Obsidian is still the one that asked or a fresh one a phone woke up.
+ */
+class SignInModal extends Modal {
+  constructor(
+    app: App,
+    private readonly plugin: TransformPipePlugin,
+    private readonly options: {
+      heading: string;
+      body: string[];
+      action: string;
+      later: string;
+      waiting?: Waiting;
+    }
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    this.setTitle(this.options.heading);
+
+    for (const paragraph of this.options.body) {
+      this.contentEl.createEl('p', { text: paragraph });
+    }
+
+    this.contentEl.createEl('p', {
+      text: 'Only what you publish is sent, and only when you ask. The sign-in is kept in your system keychain, not in your vault.',
+      cls: 'transformpipe-muted',
+    });
+
+    const actions = this.contentEl.createDiv({ cls: 'transformpipe-modal-actions' });
+    const later = actions.createEl('button', { text: this.options.later });
+    const signIn = actions.createEl('button', { text: this.options.action, cls: 'mod-cta' });
+
+    later.addEventListener('click', () => this.close());
+    signIn.addEventListener('click', () => {
+      this.plugin.keepWaiting(this.options.waiting ?? null);
+      this.close();
+      this.plugin.auth.signIn().catch((cause) => {
+        new Notice(messageOf(cause), 8000);
+      });
+      new Notice('Finish signing in in your browser. You will come back here.', 8000);
+    });
+    signIn.focus();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 /** The one question asked before something that cannot be taken back. */
 class ConfirmModal extends Modal {
   constructor(
@@ -477,6 +686,9 @@ class SettingsTab extends PluginSettingTab {
           .setButtonText('Sign in')
           .setCta()
           .onClick(async () => {
+            // Signing in from here is just signing in: nothing left waiting from an earlier ask.
+            this.plugin.keepWaiting(null);
+
             const ok = await this.plugin.auth.signIn().catch((cause) => {
               new Notice(messageOf(cause), 8000);
 
